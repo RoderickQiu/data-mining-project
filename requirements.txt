@@ -3,3 +3,5 @@ pytorch-lightning
 pandas
 numpy
 scikit-learn
+fastapi
+uvicorn

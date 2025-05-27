@@ -1,10 +1,10 @@
 import pandas as pd
+from backend.config import *
 
 # Load the datasets (please adjust the paths)
-df_train = pd.read_csv('../../../../kaggle-riiid/train.csv')
-df_questions = pd.read_csv('../../../../kaggle-riiid/questions.csv')
-
-df_difficulty = pd.read_csv('../../question_difficulty_discrimination.csv')
+df_train = pd.read_csv(TRAIN_DATA_PATH)
+df_questions = pd.read_csv(QUESTIONS_DATA_PATH)
+df_difficulty = pd.read_csv(DIFFICULTY_DATA_PATH)
 
 # merge
 df_questions = df_questions.merge(df_difficulty, left_on="question_id", right_on="content_id", how="left")
@@ -119,9 +119,11 @@ def get_recommendations_advanced(user_id, benchmark_tags=None, num_recommend=10)
     recommended = candidates.sort_values(by='score', ascending=False).head(num_recommend)['question_id'].tolist()
     return recommended
 
-import time
-start = time.time()
-recommendations = get_recommendations_advanced(user_id=115, benchmark_tags=[51, 131], num_recommend=10)
-end = time.time()
-print(f"Time taken: {end - start} seconds")
-print(recommendations)
+
+if __name__ == "__main__":
+    import time
+    start = time.time()
+    recommendations = get_recommendations_advanced(user_id=115, benchmark_tags=[51, 131], num_recommend=10)
+    end = time.time()
+    print(f"Time taken: {end - start} seconds")
+    print(recommendations)

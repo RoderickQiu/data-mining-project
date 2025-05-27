@@ -91,10 +91,12 @@ def get_dataloaders():
     val_dataset = DKTDataset(val, max_seq=Config.MAX_SEQ)
     train_loader = DataLoader(train_dataset,
                               batch_size=Config.BATCH_SIZE,
+                              persistent_workers=True,
                               num_workers=8,
                               shuffle=True)
     val_loader = DataLoader(val_dataset,
                             batch_size=Config.BATCH_SIZE,
+                            persistent_workers=True,
                             num_workers=8,
                             shuffle=False)
 

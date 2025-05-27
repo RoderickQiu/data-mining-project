@@ -174,16 +174,20 @@ class PlusSAINTModule(pl.LightningModule):
         out = torch.sigmoid(out)
         labels = torch.masked_select(labels, target_mask)
         self.log("train_loss", loss, on_step=True, prog_bar=True)
+        # Accumulate outputs for epoch end
+        if not hasattr(self, 'train_epoch_outputs'):
+            self.train_epoch_outputs = []
+        self.train_epoch_outputs.append({"outs": out.detach().cpu(), "labels": labels.detach().cpu()})
         return {"loss": loss, "outs": out, "labels": labels}
 
-    def training_epoch_end(self, training_ouput):
-        out = np.concatenate([i["outs"].cpu().detach().numpy()
-                              for i in training_ouput]).reshape(-1)
-        labels = np.concatenate([i["labels"].cpu().detach().numpy()
-                                 for i in training_ouput]).reshape(-1)
-        auc = roc_auc_score(labels, out)
-        self.print("train auc", auc)
-        self.log("train_auc", auc)
+    def on_train_epoch_end(self):
+        if hasattr(self, 'train_epoch_outputs') and len(self.train_epoch_outputs) > 0:
+            out = np.concatenate([i["outs"].numpy() for i in self.train_epoch_outputs]).reshape(-1)
+            labels = np.concatenate([i["labels"].numpy() for i in self.train_epoch_outputs]).reshape(-1)
+            auc = roc_auc_score(labels, out)
+            self.print("train auc", auc)
+            self.log("train_auc", auc)
+            self.train_epoch_outputs = []  # Clear for next epoch
 
     def validation_step(self, batch, batch_ids):
         input, labels = batch
@@ -194,17 +198,20 @@ class PlusSAINTModule(pl.LightningModule):
         out = torch.sigmoid(out)
         labels = torch.masked_select(labels, target_mask)
         self.log("val_loss", loss, on_step=True, prog_bar=True)
-        output = {"outs": out, "labels": labels}
+        # Accumulate outputs for epoch end
+        if not hasattr(self, 'val_epoch_outputs'):
+            self.val_epoch_outputs = []
+        self.val_epoch_outputs.append({"outs": out.detach().cpu(), "labels": labels.detach().cpu()})
         return {"val_loss": loss, "outs": out, "labels": labels}
 
-    def validation_epoch_end(self, validation_ouput):
-        out = np.concatenate([i["outs"].cpu().detach().numpy()
-                              for i in validation_ouput]).reshape(-1)
-        labels = np.concatenate([i["labels"].cpu().detach().numpy()
-                                 for i in validation_ouput]).reshape(-1)
-        auc = roc_auc_score(labels, out)
-        self.print("val auc", auc)
-        self.log("val_auc", auc)
+    def on_validation_epoch_end(self):
+        if hasattr(self, 'val_epoch_outputs') and len(self.val_epoch_outputs) > 0:
+            out = np.concatenate([i["outs"].numpy() for i in self.val_epoch_outputs]).reshape(-1)
+            labels = np.concatenate([i["labels"].numpy() for i in self.val_epoch_outputs]).reshape(-1)
+            auc = roc_auc_score(labels, out)
+            self.print("val auc", auc)
+            self.log("val_auc", auc)
+            self.val_epoch_outputs = []  # Clear for next epoch
 
 
 if __name__ == "__main__":

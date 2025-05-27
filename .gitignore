@@ -633,3 +633,5 @@ $RECYCLE.BIN/
 # .pnp.*
 
 # End of https://www.toptal.com/developers/gitignore/api/webstorm,pycharm,python,visualstudiocode,node,yarn,vue,react,macos,windows,linux
+saved_models
+logs

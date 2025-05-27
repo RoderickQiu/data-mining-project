@@ -1,103 +1,180 @@
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from typing import List, Optional
 import torch
 import numpy as np
+import pandas as pd
 from config import Config
 from train import PlusSAINTModule
+import os
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# For recommend.py data paths
+RECOMMEND_DATA_PATHS = {
+    'train': '/Users/dvalab/Documents/Roderick/kaggle-riiid/train.csv',
+    'questions': '/Users/dvalab/Documents/Roderick/kaggle-riiid/questions.csv',
+    'difficulty': '/Users/dvalab/Documents/Roderick/kaggle-riiid/question_difficulty_discrimination.csv',
+}
 
+def parse_tags(tags):
+    if isinstance(tags, str):
+        return list(map(int, tags.split()))
+    return []
 
-def load_trained_model(checkpoint_path):
-    model = PlusSAINTModule.load_from_checkpoint(
-        checkpoint_path,
-        map_location=device
-    )
-    model.to(device).eval()
-    return model
+app = FastAPI()
 
+device = Config.device
+model = None
+# DataFrames for recommend endpoints
+df_train = None
+df_questions = None
 
-# 使用您提供的5个具体样例
-def prepare_input_samples():
-    samples = [
-        # 样例1
-        {
-            "input_ids": [7900,  7876,   175,  1278 , 2064 , 2065 , 2063 , 3364 , 3363 , 3365 , 2948  ,2946],
-            "input_rtime": [0,   0 , 22 , 22  ,27  ,17  ,17  ,17  ,26  ,26 , 26,  24  ],
-            "input_cat": [0,  1 , 2 , 3 , 4 , 4  ,4  ,5 , 5 , 5 , 6 , 6]
-        },
-        # # 样例2
-        # {
-        #     "input_ids": [639, 4123, 6152, 5318, 6409, 4128, 148, 22, 161, 10654],
-        #     "input_rtime": [0, 23, 18, 23, 21, 53, 33, 37, 21, 22],
-        #     "input_cat": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-        # },
-        # # 样例3
-        # {
-        #     "input_ids": [4123, 6152, 5318, 6409, 4128, 148, 22, 161, 10654, 5],
-        #     "input_rtime": [0, 18, 23, 21, 53, 33, 37, 21, 22, 25],
-        #     "input_cat": [2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
-        # },
-        # # 样例4
-        # {
-        #     "input_ids": [6152, 5318, 6409, 4128, 148, 22, 161, 10654, 5, 64],
-        #     "input_rtime": [0, 23, 21, 53, 33, 37, 21, 22, 25, 22],
-        #     "input_cat": [3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
-        # },
-        # # 样例5
-        # {
-        #     "input_ids": [5318, 6409, 4128, 148, 22, 161, 10654, 5, 64, 7911],
-        #     "input_rtime": [0, 21, 53, 33, 37, 21, 22, 25, 22, 22],
-        #     "input_cat": [4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
-        # }
-    ]
+class PredictRequest(BaseModel):
+    input_ids: List[int]
+    input_rtime: List[int]
+    input_cat: List[int]
 
-    processed_samples = []
-    for sample in samples:
-        max_seq = Config.MAX_SEQ
-        seq_len = len(sample["input_ids"])
+class PredictResponse(BaseModel):
+    probs: List[float]
 
-        # 处理padding
-        padded_ids = np.zeros(max_seq, dtype=np.int64)
-        padded_ids[-seq_len:] = sample["input_ids"]
+class RecommendRequest(BaseModel):
+    user_id: int
+    benchmark_tags: Optional[List[int]] = None
+    num_recommend: int = 10
 
-        padded_time = np.zeros(max_seq, dtype=np.int64)
-        padded_time[-seq_len:] = sample["input_rtime"]
+class RecommendResponse(BaseModel):
+    question_ids: List[int]
 
-        padded_cat = np.zeros(max_seq, dtype=np.int64)
-        padded_cat[-seq_len:] = sample["input_cat"]
+@app.on_event("startup")
+def load_resources():
+    global model, df_train, df_questions
+    # Load model
+    try:
+        model = PlusSAINTModule.load_from_checkpoint(
+            "saved_models/best_model-v3.ckpt",
+            dtype=torch.float32
+        )
+        model.to(device).eval()
+    except Exception as e:
+        print(f"Failed to load model: {e}")
+        model = None
+    # Load recommend.py data
+    try:
+        df_train = pd.read_csv(RECOMMEND_DATA_PATHS['train'])
+        df_questions = pd.read_csv(RECOMMEND_DATA_PATHS['questions'])
+        df_difficulty = pd.read_csv(RECOMMEND_DATA_PATHS['difficulty'])
+        df_questions_merged = df_questions.merge(df_difficulty, left_on="question_id", right_on="content_id", how="left")
+        df_questions_merged.drop(columns=["content_id"], inplace=True)
+        df_questions_merged.set_index("question_id", inplace=True)
+        df_questions_merged['tags_list'] = df_questions_merged['tags'].apply(parse_tags)
+        df_questions = df_questions_merged
+    except Exception as e:
+        print(f"Failed to load recommend data: {e}")
+        df_train = None
+        df_questions = None
+        
+@app.get("/")
+def root():
+    return {"message": "Hello, World!"}
 
-        processed_samples.append({
-            "input_ids": torch.from_numpy(padded_ids).unsqueeze(0).to(device),
-            "input_rtime": torch.from_numpy(padded_time).unsqueeze(0).to(device),
-            "input_cat": torch.from_numpy(padded_cat).unsqueeze(0).to(device)
-        })
-
-    return processed_samples
-
-
-def predict_next_question(model, input_data):
+@app.post("/predict", response_model=PredictResponse)
+def predict(request: PredictRequest):
+    if model is None:
+        raise HTTPException(status_code=503, detail="Model not loaded.")
+    seq_len = len(request.input_ids)
+    if not (len(request.input_rtime) == seq_len and len(request.input_cat) == seq_len):
+        raise HTTPException(status_code=400, detail="All input lists must have the same length.")
+    max_seq = Config.MAX_SEQ
+    padded_ids = np.zeros(max_seq, dtype=np.float32)
+    padded_ids[-seq_len:] = request.input_ids
+    padded_time = np.zeros(max_seq, dtype=np.float32)
+    padded_time[-seq_len:] = request.input_rtime
+    padded_cat = np.zeros(max_seq, dtype=np.float32)
+    padded_cat[-seq_len:] = request.input_cat
+    input_data = {
+        "input_ids": torch.tensor(padded_ids, dtype=torch.float32).unsqueeze(0).to(device),
+        "input_rtime": torch.tensor(padded_time, dtype=torch.float32).unsqueeze(0).to(device),
+        "input_cat": torch.tensor(padded_cat, dtype=torch.float32).unsqueeze(0).to(device)
+    }
     with torch.no_grad():
         dummy_labels = torch.zeros_like(input_data["input_ids"]).to(device)
         logits = model(input_data, dummy_labels)
-
-        # 维度保护
         if logits.dim() == 1:
             logits = logits.unsqueeze(0)
+        probs = torch.sigmoid(logits).squeeze().cpu().numpy().tolist()
+    return PredictResponse(probs=probs)
 
-        # 返回所有位置的预测概率（而不仅是最后一个）
-        probs = torch.sigmoid(logits).squeeze().cpu().numpy()
-        return probs
+@app.post("/recommend", response_model=RecommendResponse)
+def recommend(request: RecommendRequest):
+    if df_train is None or df_questions is None:
+        raise HTTPException(status_code=503, detail="Recommend data not loaded.")
+    user_id = request.user_id
+    benchmark_tags = set(request.benchmark_tags) if request.benchmark_tags else set()
+    num_recommend = request.num_recommend
+    user_attempted = df_train[(df_train['user_id'] == user_id) & (df_train['content_type_id'] == 0)]['content_id'].unique()
+    user_correct = df_train[(df_train['user_id'] == user_id) & (df_train['content_type_id'] == 0) & (df_train['answered_correctly'] == 1)]['content_id'].unique()
+    user_wrong = df_train[(df_train['user_id'] == user_id) & (df_train['content_type_id'] == 0) & (df_train['answered_correctly'] == 0)]['content_id'].unique()
+    correct_questions_df = df_questions[df_questions.index.isin(user_correct)]
+    correct_tags = set()
+    for tags in correct_questions_df['tags_list']:
+        correct_tags.update(tags)
+    wrong_questions_df = df_questions[df_questions.index.isin(user_wrong)]
+    wrong_tags = set()
+    for tags in wrong_questions_df['tags_list']:
+        wrong_tags.update(tags)
+    if not correct_tags and not wrong_tags:
+        return RecommendResponse(question_ids=[])
+    all_questions = set(df_questions.index)
+    not_attempted = all_questions - set(user_attempted)
+    candidates = pd.DataFrame({'question_id': list(not_attempted)})
+    def overlap_score(qid):
+        q_tags = set(df_questions.loc[qid, 'tags_list'])
+        common_with_correct = len(q_tags & correct_tags)
+        common_with_wrong = len(q_tags & wrong_tags)
+        common_with_benchmark = len(q_tags & benchmark_tags)
+        total_score = 1.5 * common_with_wrong + 2 * common_with_benchmark - common_with_correct
+        return total_score
+    candidates['score'] = candidates['question_id'].apply(overlap_score)
+    recommended = candidates.sort_values(by='score', ascending=False).head(num_recommend)['question_id'].tolist()
+    return RecommendResponse(question_ids=recommended)
 
-
-if __name__ == "__main__":
-    model = load_trained_model("saved_models/best_model-v3.ckpt")
-    samples = prepare_input_samples()
-
-    for i, sample in enumerate(samples, 1):
-        probs = predict_next_question(model, sample)
-
-        # 打印完整预测结果
-        print(f"\n样例{i}预测结果:")
-        print(f"  题目ID: {sample['input_ids'].cpu().numpy()[0][-10:]}")  # 显示最后10个
-        print(f"  预测概率: {probs}")  # 对应最后10题的预测概率
-        print(f"  答题时间: {sample['input_rtime'].cpu().numpy()[0][-10:]}")
-        print(f"  题目类别: {sample['input_cat'].cpu().numpy()[0][-10:]}")
+@app.post("/recommend_advanced", response_model=RecommendResponse)
+def recommend_advanced(request: RecommendRequest):
+    if df_train is None or df_questions is None:
+        raise HTTPException(status_code=503, detail="Recommend data not loaded.")
+    user_id = request.user_id
+    benchmark_tags = set(request.benchmark_tags) if request.benchmark_tags else set()
+    num_recommend = request.num_recommend
+    user_attempts = df_train[(df_train['user_id'] == user_id) & (df_train['content_type_id'] == 0)]
+    if user_attempts.empty:
+        return RecommendResponse(question_ids=[])
+    num_tags = 188
+    C_t = [0] * num_tags
+    I_t = [0] * num_tags
+    for _, row in user_attempts.iterrows():
+        content_id = row['content_id']
+        answered_correctly = row['answered_correctly']
+        if content_id in df_questions.index:
+            tags_list = df_questions.loc[content_id, 'tags_list']
+            for t in tags_list:
+                if answered_correctly == 1:
+                    C_t[t] += 1
+                elif answered_correctly == 0:
+                    I_t[t] += 1
+    M_t = [(1 + C) / (2 + C + I) for C, I in zip(C_t, I_t)]
+    user_attempted = user_attempts['content_id'].unique()
+    all_questions = set(df_questions.index)
+    not_attempted = all_questions - set(user_attempted)
+    candidates = pd.DataFrame({'question_id': list(not_attempted)})
+    B = benchmark_tags
+    def compute_score(q):
+        T_q = df_questions.loc[q, 'tags_list']
+        sum_weak = sum(1 - M_t[t] for t in T_q if t < len(M_t))
+        D_q = df_questions.loc[q, 'difficulty']
+        score = sum_weak / (1 + D_q) if (1 + D_q) > 0 else 0
+        if 'quality_flag' in df_questions.columns and df_questions.loc[q].get('quality_flag', None) == "推荐":
+            score *= 1.2
+        score += 2 * len(set(T_q) & B)
+        return score
+    candidates['score'] = candidates['question_id'].apply(compute_score)
+    recommended = candidates.sort_values(by='score', ascending=False).head(num_recommend)['question_id'].tolist()
+    return RecommendResponse(question_ids=recommended) 
