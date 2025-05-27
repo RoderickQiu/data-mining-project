@@ -1,15 +1,22 @@
 # About
-This is repository for Data Mining(CS306) final project.
+This is repository for CS306 (Data Mining) final project.
 
 # Back-end
+
+## FastAPI
+
+Now the `main.py` is a FastAPI server that can be used to predict the next question and recommend questions.
+
+Run `uvicorn main:app --reload` to start the server. See the content of `main.py` for more details.
+
 ## Data Tracing
-运行train开始训练
-main会访问saved_models的模型，根据输入输出一个包含正确概率的数组，目前错误率是65%，反过来错误率理论上就到35%了，所以也可以说正确率是65%
-git上传不了这个模型，要的话得找我
-数据集在https://www.kaggle.com/competitions/riiid-test-answer-prediction/data
+Run `train.py` to start training.
+The `test.py` accesses the model in `saved_models` directory and outputs an array containing probabilities of correct answers. Currently the error rate is 65%, which theoretically means the accuracy rate is 35% when reversed, so we can also say the accuracy rate is 65%.
+The model is too large for git and can be retrieved from contributors.
+Dataset can be found at https://www.kaggle.com/competitions/riiid-test-answer-prediction/data
 
 ## Recommending System
-Please addjust the dataset path in `backend/recommend.py`
+Please addjust the dataset path in `backend/config.py`.
 
 ### Function
 
