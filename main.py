@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 import torch
@@ -21,6 +22,15 @@ def parse_tags(tags):
     return []
 
 app = FastAPI()
+
+# Add CORS middleware to allow all origins
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
 
 device = Config.device
 model = None
@@ -84,19 +94,19 @@ def predict(request: PredictRequest):
     if not (len(request.input_rtime) == seq_len and len(request.input_cat) == seq_len):
         raise HTTPException(status_code=400, detail="All input lists must have the same length.")
     max_seq = Config.MAX_SEQ
-    padded_ids = np.zeros(max_seq, dtype=np.float32)
+    padded_ids = np.zeros(max_seq, dtype=np.int64)
     padded_ids[-seq_len:] = request.input_ids
-    padded_time = np.zeros(max_seq, dtype=np.float32)
+    padded_time = np.zeros(max_seq, dtype=np.int64)
     padded_time[-seq_len:] = request.input_rtime
-    padded_cat = np.zeros(max_seq, dtype=np.float32)
+    padded_cat = np.zeros(max_seq, dtype=np.int64)
     padded_cat[-seq_len:] = request.input_cat
     input_data = {
-        "input_ids": torch.tensor(padded_ids, dtype=torch.float32).unsqueeze(0).to(device),
-        "input_rtime": torch.tensor(padded_time, dtype=torch.float32).unsqueeze(0).to(device),
-        "input_cat": torch.tensor(padded_cat, dtype=torch.float32).unsqueeze(0).to(device)
+        "input_ids": torch.tensor(padded_ids, dtype=torch.long).unsqueeze(0).to(device),
+        "input_rtime": torch.tensor(padded_time, dtype=torch.long).unsqueeze(0).to(device),
+        "input_cat": torch.tensor(padded_cat, dtype=torch.long).unsqueeze(0).to(device)
     }
     with torch.no_grad():
-        dummy_labels = torch.zeros_like(input_data["input_ids"]).to(device)
+        dummy_labels = torch.zeros_like(input_data["input_ids"], dtype=torch.long).to(device)
         logits = model(input_data, dummy_labels)
         if logits.dim() == 1:
             logits = logits.unsqueeze(0)
