@@ -1,20 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
-import { apiService, RecommendRequest } from '../services/api';
+import { apiService, RecommendRequest, QuestionStats } from '../services/api';
 import { Loader2, Target, Info, AlertCircle } from 'lucide-react';
 
 const RecommendTab: React.FC = () => {
     const [userId, setUserId] = useState<string>('');
     const [benchmarkTags, setBenchmarkTags] = useState<string>('');
     const [numRecommend, setNumRecommend] = useState<string>('10');
-    const [basicRecommendations, setBasicRecommendations] = useState<number[]>([]);
     const [advancedRecommendations, setAdvancedRecommendations] = useState<number[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string>('');
     const [noResultsMessage, setNoResultsMessage] = useState<string>('');
+    const [questionStats, setQuestionStats] = useState<QuestionStats[]>([]);
+    const [statsError, setStatsError] = useState<string>('');
 
     // Example valid user IDs for demonstration
     const exampleUserIds = [115, 124, 2746, 5382, 8623, 8701, 12741, 13134, 24418, 24600];
@@ -46,19 +47,17 @@ const RecommendTab: React.FC = () => {
                 num_recommend: numRecommendNum,
             };
 
-            const response = isAdvanced
-                ? await apiService.recommendAdvanced(request)
-                : await apiService.recommend(request);
+            const response = await apiService.recommendAdvanced(request)
 
             if (response.question_ids.length === 0) {
                 setNoResultsMessage('no_results');
             }
 
-            if (isAdvanced) {
-                setAdvancedRecommendations(response.question_ids);
-            } else {
-                setBasicRecommendations(response.question_ids);
-            }
+            const statsResponse = await apiService.getQuestionStatsByIds(response.question_ids);
+            setQuestionStats(statsResponse);
+            console.log(statsResponse);
+
+            setAdvancedRecommendations(response.question_ids);
         } catch (err) {
             setError(err instanceof Error ? err.message : '推荐失败');
         } finally {
@@ -71,16 +70,6 @@ const RecommendTab: React.FC = () => {
         setError('');
         setNoResultsMessage('');
     };
-
-    const basicChartData = basicRecommendations.map((qid, index) => ({
-        index: index + 1,
-        questionId: qid,
-    }));
-
-    const advancedChartData = advancedRecommendations.map((qid, index) => ({
-        index: index + 1,
-        questionId: qid,
-    }));
 
     return (
         <div className="space-y-6">
@@ -132,6 +121,9 @@ const RecommendTab: React.FC = () => {
                             value={benchmarkTags}
                             onChange={(e) => setBenchmarkTags(e.target.value)}
                         />
+                        <p className="text-sm text-muted-foreground">
+                            基准标签：由使用的数据集提供，是一个或多个详细的标签代码，用于对问题进行聚类。标签的含义未被提供，但这些代码足以将类似的问题聚类在一起。
+                        </p>
                     </div>
 
                     <div className="space-y-2">
@@ -171,13 +163,30 @@ const RecommendTab: React.FC = () => {
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-2">
-                            {advancedRecommendations.map((qid, index) => (
-                                <div key={index} className="text-center p-2 bg-muted rounded">
-                                    <div className="text-sm text-muted-foreground">推荐 {index + 1}</div>
-                                    <div className="font-semibold">题目 {qid}</div>
-                                </div>
-                            ))}
+                        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                            {advancedRecommendations.map((qid, index) => {
+                                const stat = questionStats.find(q => q.question_id === qid);
+                                return (
+                                    <div key={index} className="text-left p-2 bg-muted rounded border">
+                                        <div className="text-sm text-muted-foreground mb-1">推荐 {index + 1}</div>
+                                        <div className="font-semibold mb-1">题目 {qid}</div>
+                                        <div className="flex flex-wrap gap-1 mb-1">
+                                            <span className="inline-block px-2 py-0.5 text-xs rounded bg-orange-100 text-orange-800">
+                                                难度: {stat?.difficulty !== undefined && stat?.difficulty !== null ? stat.difficulty.toFixed(3) : '-'}
+                                            </span>
+                                            <span className="inline-block px-2 py-0.5 text-xs rounded bg-green-100 text-green-800">
+                                                区分度: {stat?.discrimination !== undefined && stat?.discrimination !== null ? stat.discrimination.toFixed(3) : '-'}
+                                            </span>
+                                            <span className="inline-block px-2 py-0.5 text-xs rounded bg-yellow-100 text-yellow-800">
+                                                标签: {stat?.tags ?? '-'}
+                                            </span>
+                                            <span className="inline-block px-2 py-0.5 text-xs rounded bg-pink-100 text-pink-800">
+                                                TOEIC 章节: {stat?.part ?? '-'}
+                                            </span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </CardContent>
                 </Card>
@@ -222,6 +231,8 @@ const RecommendTab: React.FC = () => {
                     </CardContent>
                 </Card>
             )}
+
+            {statsError && <div className="text-red-500 text-sm">{statsError}</div>}
         </div>
     );
 };

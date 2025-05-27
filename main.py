@@ -1,5 +1,6 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.params import Body
 from pydantic import BaseModel
 from typing import List, Optional
 import torch
@@ -53,6 +54,16 @@ class RecommendRequest(BaseModel):
 
 class RecommendResponse(BaseModel):
     question_ids: List[int]
+
+class QuestionStatsResponse(BaseModel):
+    question_id: int
+    difficulty: float
+    discrimination: float
+    quality_flag: Optional[str] = None
+    bundle_id: Optional[int] = None
+    correct_answer: Optional[int] = None
+    part: Optional[int] = None
+    tags: Optional[str] = None
 
 @app.on_event("startup")
 def load_resources():
@@ -180,6 +191,10 @@ def recommend_advanced(request: RecommendRequest):
         T_q = df_questions.loc[q, 'tags_list']
         sum_weak = sum(1 - M_t[t] for t in T_q if t < len(M_t))
         D_q = df_questions.loc[q, 'difficulty']
+        discrimination = df_questions.loc[q, 'discrimination'] if 'discrimination' in df_questions.columns else None
+        # 剔除区分度过低的题目
+        if discrimination is not None and discrimination < 0.2:
+            return float('-inf')
         score = sum_weak / (1 + D_q) if (1 + D_q) > 0 else 0
         if 'quality_flag' in df_questions.columns and df_questions.loc[q].get('quality_flag', None) == "推荐":
             score *= 1.2
@@ -187,4 +202,25 @@ def recommend_advanced(request: RecommendRequest):
         return score
     candidates['score'] = candidates['question_id'].apply(compute_score)
     recommended = candidates.sort_values(by='score', ascending=False).head(num_recommend)['question_id'].tolist()
-    return RecommendResponse(question_ids=recommended) 
+    return RecommendResponse(question_ids=recommended)
+
+@app.post("/question_stats_by_ids")
+async def question_stats_by_ids(question_ids: List[int] = Body(...)):
+    if df_questions is None:
+        raise HTTPException(status_code=503, detail="Recommend data not loaded.")
+    result = []
+    for qid in question_ids:
+        if qid in df_questions.index:
+            row = df_questions.loc[qid]
+            entry = {
+                'question_id': int(qid),
+                'difficulty': float(row['difficulty']) if not pd.isna(row['difficulty']) else None,
+                'discrimination': float(row['discrimination']) if not pd.isna(row['discrimination']) else None,
+                'quality_flag': row['quality_flag'] if 'quality_flag' in row and not pd.isna(row['quality_flag']) else None,
+                'bundle_id': int(row['bundle_id']) if 'bundle_id' in row and not pd.isna(row['bundle_id']) else None,
+                'correct_answer': int(row['correct_answer']) if 'correct_answer' in row and not pd.isna(row['correct_answer']) else None,
+                'part': int(row['part']) if 'part' in row and not pd.isna(row['part']) else None,
+                'tags': row['tags'] if 'tags' in row and not pd.isna(row['tags']) else None
+            }
+            result.append(entry)
+    return result 
