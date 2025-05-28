@@ -1,9 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs';
-import PredictTab from './components/PredictTab';
-import RecommendTab from './components/RecommendTab';
+import { useState, useEffect } from 'react';
 import { apiService } from './services/api';
-import { Brain, Users, Activity, CheckCircle, XCircle } from 'lucide-react';
+import { Activity, CheckCircle, XCircle } from 'lucide-react';
+import MainTab from './components/MainTab';
 
 function App() {
   const [apiStatus, setApiStatus] = useState<'checking' | 'online' | 'offline'>('checking');
@@ -63,26 +61,7 @@ function App() {
         </div>
 
         {/* Main Content */}
-        <Tabs defaultValue="predict" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="predict" className="flex items-center space-x-2">
-              <Brain className="h-4 w-4" />
-              <span>学习预测</span>
-            </TabsTrigger>
-            <TabsTrigger value="recommend" className="flex items-center space-x-2">
-              <Users className="h-4 w-4" />
-              <span>题目推荐</span>
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="predict" className="mt-6">
-            <PredictTab />
-          </TabsContent>
-
-          <TabsContent value="recommend" className="mt-6">
-            <RecommendTab />
-          </TabsContent>
-        </Tabs>
+        <MainTab />
 
         {/* Footer */}
         <div className="mt-12 text-center text-sm text-muted-foreground">

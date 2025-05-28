@@ -3,27 +3,39 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
-import { apiService, RecommendRequest, QuestionStats } from '../services/api';
+import { apiService, RecommendRequest, QuestionStats, PredictRequest } from '../services/api';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Loader2, Target, Info, AlertCircle } from 'lucide-react';
 
-const RecommendTab: React.FC = () => {
+const MainTab: React.FC = () => {
     const [userId, setUserId] = useState<string>('');
     const [benchmarkTags, setBenchmarkTags] = useState<string>('');
     const [numRecommend, setNumRecommend] = useState<string>('10');
-    const [advancedRecommendations, setAdvancedRecommendations] = useState<number[]>([]);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<string>('');
-    const [noResultsMessage, setNoResultsMessage] = useState<string>('');
+    const [recommendations, setRecommendations] = useState<number[]>([]);
     const [questionStats, setQuestionStats] = useState<QuestionStats[]>([]);
+    const [inputRtime, setInputRtime] = useState<string>('');
+    const [inputCat, setInputCat] = useState<string>('');
+    const [predictions, setPredictions] = useState<number[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [predictLoading, setPredictLoading] = useState(false);
+    const [error, setError] = useState<string>('');
+    const [predictError, setPredictError] = useState<string>('');
+    const [noResultsMessage, setNoResultsMessage] = useState<string>('');
 
     // Example valid user IDs for demonstration
     const exampleUserIds = [115, 124, 2746, 5382, 8623, 8701, 12741, 13134, 24418, 24600];
 
-    const handleRecommend = async (isAdvanced: boolean = false) => {
+    // 推荐题目
+    const handleRecommend = async () => {
         try {
             setLoading(true);
             setError('');
             setNoResultsMessage('');
+            setRecommendations([]);
+            setQuestionStats([]);
+            setPredictions([]);
+            setInputRtime('');
+            setInputCat('');
 
             const userIdNum = parseInt(userId.trim());
             const numRecommendNum = parseInt(numRecommend.trim());
@@ -31,7 +43,6 @@ const RecommendTab: React.FC = () => {
             if (isNaN(userIdNum)) {
                 throw new Error('请输入有效的用户ID');
             }
-
             if (isNaN(numRecommendNum) || numRecommendNum <= 0) {
                 throw new Error('请输入有效的推荐数量');
             }
@@ -46,21 +57,59 @@ const RecommendTab: React.FC = () => {
                 num_recommend: numRecommendNum,
             };
 
-            const response = await apiService.recommendAdvanced(request)
-
+            const response = await apiService.recommendAdvanced(request);
             if (response.question_ids.length === 0) {
                 setNoResultsMessage('no_results');
+                return;
             }
+            setRecommendations(response.question_ids);
 
+            // 获取题目信息
             const statsResponse = await apiService.getQuestionStatsByIds(response.question_ids);
             setQuestionStats(statsResponse);
-            console.log(statsResponse);
 
-            setAdvancedRecommendations(response.question_ids);
+            // 自动填写类别
+            const cats = statsResponse.map(q => {
+                return q.part ?? '0';
+            });
+            setInputCat(cats.join(','));
         } catch (err) {
             setError(err instanceof Error ? err.message : '推荐失败');
         } finally {
             setLoading(false);
+        }
+    };
+
+    // 预测概率
+    const handlePredict = async () => {
+        try {
+            setPredictLoading(true);
+            setPredictError('');
+            setPredictions([]);
+
+            // Parse input strings to arrays
+            const ids = recommendations;
+            const rtime = inputRtime.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+            const cat = inputCat.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+
+            if (ids.length === 0 || rtime.length === 0 || cat.length === 0) {
+                throw new Error('请填写所有必需的输入');
+            }
+            if (ids.length !== rtime.length || ids.length !== cat.length) {
+                throw new Error('题目ID、响应时间、类别长度必须一致');
+            }
+
+            const request: PredictRequest = {
+                input_ids: ids,
+                input_rtime: rtime,
+                input_cat: cat,
+            };
+            const response = await apiService.predict(request);
+            setPredictions(response.probs.slice(0, ids.length));
+        } catch (err) {
+            setPredictError(err instanceof Error ? err.message : '预测失败');
+        } finally {
+            setPredictLoading(false);
         }
     };
 
@@ -70,13 +119,18 @@ const RecommendTab: React.FC = () => {
         setNoResultsMessage('');
     };
 
+    const chartData = predictions.map((prob, index) => ({
+        index: index + 1,
+        probability: prob,
+    }));
+
     return (
         <div className="space-y-6">
             <Card>
                 <CardHeader>
-                    <CardTitle>题目推荐</CardTitle>
+                    <CardTitle>题目推荐与预测</CardTitle>
                     <CardDescription>
-                        基于用户历史数据推荐合适的题目
+                        推荐题目后，自动填写题目ID和类别，手动填写响应时间，预测概率自动展示
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -141,7 +195,7 @@ const RecommendTab: React.FC = () => {
 
                     <div className="flex gap-2">
                         <Button
-                            onClick={() => handleRecommend(true)}
+                            onClick={handleRecommend}
                             disabled={loading}
                             className="flex-1"
                         >
@@ -153,17 +207,19 @@ const RecommendTab: React.FC = () => {
                 </CardContent>
             </Card>
 
-            {advancedRecommendations.length > 0 && (
+            {/* 推荐题目结果 */}
+            {recommendations.length > 0 && (
                 <Card>
                     <CardHeader>
-                        <CardTitle>高级推荐结果</CardTitle>
+                        <CardTitle>推荐题目结果</CardTitle>
                         <CardDescription>
-                            基于知识掌握度和题目难度的智能推荐
+                            根据用户历史数据和基准标签推荐的题目列表
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                            {advancedRecommendations.map((qid, index) => {
+                        {/* 推荐题目信息 */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                            {recommendations.map((qid, index) => {
                                 const stat = questionStats.find(q => q.question_id === qid);
                                 return (
                                     <div key={index} className="text-left p-2 bg-muted rounded border">
@@ -191,6 +247,94 @@ const RecommendTab: React.FC = () => {
                 </Card>
             )}
 
+            {/* 预测输入 */}
+            {recommendations.length > 0 && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle>预测输入</CardTitle>
+                        <CardDescription>
+                            题目ID和类别已自动填写，请输入响应时间（用逗号分隔，数量需与题目数一致）
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="input-ids">题目ID序列</Label>
+                            <Input
+                                id="input-ids"
+                                value={recommendations.join(',')}
+                                readOnly
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="input-cat">题目类别序列</Label>
+                            <Input
+                                id="input-cat"
+                                value={inputCat}
+                                readOnly
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="input-rtime">响应时间序列 (用逗号分隔)</Label>
+                            <Input
+                                id="input-rtime"
+                                placeholder={`如: ${Array(recommendations.length).fill(1000).join(',')}`}
+                                value={inputRtime}
+                                onChange={(e) => setInputRtime(e.target.value)}
+                            />
+                        </div>
+                        {predictError && (
+                            <div className="text-red-500 text-sm">{predictError}</div>
+                        )}
+                        <Button onClick={handlePredict} disabled={predictLoading} className="w-full">
+                            {predictLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            {predictLoading ? '预测中...' : '开始预测'}
+                        </Button>
+                    </CardContent>
+                </Card>
+            )}
+
+            {/* 预测结果 */}
+            {predictions.length > 0 && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle>预测结果</CardTitle>
+                        <CardDescription>
+                            模型对每个题目的预测概率
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="h-64 w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <LineChart data={chartData}>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis dataKey="index" />
+                                    <YAxis domain={[0, 1]} />
+                                    <Tooltip
+                                        formatter={(value: number) => [value.toFixed(4), '预测概率']}
+                                        labelFormatter={(label) => `题目 ${label}`}
+                                    />
+                                    <Line
+                                        type="monotone"
+                                        dataKey="probability"
+                                        stroke="#8884d8"
+                                        strokeWidth={2}
+                                        dot={{ r: 4 }}
+                                    />
+                                </LineChart>
+                            </ResponsiveContainer>
+                        </div>
+                        <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-2">
+                            {predictions.map((prob, index) => (
+                                <div key={index} className="text-center p-2 bg-muted rounded">
+                                    <div className="text-sm text-muted-foreground">题目 {index + 1}</div>
+                                    <div className="font-semibold">{prob.toFixed(4)}</div>
+                                </div>
+                            ))}
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
+
             {noResultsMessage && (
                 <Card>
                     <CardHeader>
@@ -211,7 +355,6 @@ const RecommendTab: React.FC = () => {
                                 <li>• 所有题目都已经被该用户尝试过</li>
                             </ul>
                         </div>
-
                         <div>
                             <p className="text-sm text-muted-foreground mb-2">请尝试使用以下示例用户ID：</p>
                             <div className="flex flex-wrap gap-2">
@@ -234,4 +377,4 @@ const RecommendTab: React.FC = () => {
     );
 };
 
-export default RecommendTab; 
+export default MainTab; 
