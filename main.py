@@ -119,44 +119,11 @@ def predict(request: PredictRequest):
     with torch.no_grad():
         dummy_labels = torch.zeros_like(input_data["input_ids"], dtype=torch.long).to(device)
         logits = model(input_data, dummy_labels)
-        if logits.dim() == 1:
-            logits = logits.unsqueeze(0)
-        probs = torch.sigmoid(logits).squeeze().cpu().numpy().tolist()
+        # mask 非padding部分
+        target_mask = (input_data["input_ids"] != 0)
+        logits = torch.masked_select(logits, target_mask)
+        probs = torch.sigmoid(logits).cpu().numpy().tolist()
     return PredictResponse(probs=probs)
-
-@app.post("/recommend", response_model=RecommendResponse)
-def recommend(request: RecommendRequest):
-    if df_train is None or df_questions is None:
-        raise HTTPException(status_code=503, detail="Recommend data not loaded.")
-    user_id = request.user_id
-    benchmark_tags = set(request.benchmark_tags) if request.benchmark_tags else set()
-    num_recommend = request.num_recommend
-    user_attempted = df_train[(df_train['user_id'] == user_id) & (df_train['content_type_id'] == 0)]['content_id'].unique()
-    user_correct = df_train[(df_train['user_id'] == user_id) & (df_train['content_type_id'] == 0) & (df_train['answered_correctly'] == 1)]['content_id'].unique()
-    user_wrong = df_train[(df_train['user_id'] == user_id) & (df_train['content_type_id'] == 0) & (df_train['answered_correctly'] == 0)]['content_id'].unique()
-    correct_questions_df = df_questions[df_questions.index.isin(user_correct)]
-    correct_tags = set()
-    for tags in correct_questions_df['tags_list']:
-        correct_tags.update(tags)
-    wrong_questions_df = df_questions[df_questions.index.isin(user_wrong)]
-    wrong_tags = set()
-    for tags in wrong_questions_df['tags_list']:
-        wrong_tags.update(tags)
-    if not correct_tags and not wrong_tags:
-        return RecommendResponse(question_ids=[])
-    all_questions = set(df_questions.index)
-    not_attempted = all_questions - set(user_attempted)
-    candidates = pd.DataFrame({'question_id': list(not_attempted)})
-    def overlap_score(qid):
-        q_tags = set(df_questions.loc[qid, 'tags_list'])
-        common_with_correct = len(q_tags & correct_tags)
-        common_with_wrong = len(q_tags & wrong_tags)
-        common_with_benchmark = len(q_tags & benchmark_tags)
-        total_score = 1.5 * common_with_wrong + 2 * common_with_benchmark - common_with_correct
-        return total_score
-    candidates['score'] = candidates['question_id'].apply(overlap_score)
-    recommended = candidates.sort_values(by='score', ascending=False).head(num_recommend)['question_id'].tolist()
-    return RecommendResponse(question_ids=recommended)
 
 @app.post("/recommend_advanced", response_model=RecommendResponse)
 def recommend_advanced(request: RecommendRequest):
@@ -171,6 +138,18 @@ def recommend_advanced(request: RecommendRequest):
     num_tags = 188
     C_t = [0] * num_tags
     I_t = [0] * num_tags
+    # 统计正答/错答过的题目标签
+    user_correct = user_attempts[user_attempts['answered_correctly'] == 1]['content_id'].unique()
+    user_wrong = user_attempts[user_attempts['answered_correctly'] == 0]['content_id'].unique()
+    correct_questions_df = df_questions[df_questions.index.isin(user_correct)]
+    correct_tags = set()
+    for tags in correct_questions_df['tags_list']:
+        correct_tags.update(tags)
+    wrong_questions_df = df_questions[df_questions.index.isin(user_wrong)]
+    wrong_tags = set()
+    for tags in wrong_questions_df['tags_list']:
+        wrong_tags.update(tags)
+    # 统计标签掌握度
     for _, row in user_attempts.iterrows():
         content_id = row['content_id']
         answered_correctly = row['answered_correctly']
@@ -198,7 +177,12 @@ def recommend_advanced(request: RecommendRequest):
         score = sum_weak / (1 + D_q) if (1 + D_q) > 0 else 0
         if 'quality_flag' in df_questions.columns and df_questions.loc[q].get('quality_flag', None) == "推荐":
             score *= 1.2
-        score += 2 * len(set(T_q) & B)
+        # 融合正答/错答/benchmark标签思想
+        q_tags = set(T_q)
+        common_with_correct = len(q_tags & correct_tags)
+        common_with_wrong = len(q_tags & wrong_tags)
+        common_with_benchmark = len(q_tags & B)
+        score += 1.5 * common_with_wrong + 2 * common_with_benchmark - common_with_correct
         return score
     candidates['score'] = candidates['question_id'].apply(compute_score)
     recommended = candidates.sort_values(by='score', ascending=False).head(num_recommend)['question_id'].tolist()

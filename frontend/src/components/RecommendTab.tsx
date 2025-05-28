@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -15,7 +15,6 @@ const RecommendTab: React.FC = () => {
     const [error, setError] = useState<string>('');
     const [noResultsMessage, setNoResultsMessage] = useState<string>('');
     const [questionStats, setQuestionStats] = useState<QuestionStats[]>([]);
-    const [statsError, setStatsError] = useState<string>('');
 
     // Example valid user IDs for demonstration
     const exampleUserIds = [115, 124, 2746, 5382, 8623, 8701, 12741, 13134, 24418, 24600];
@@ -231,8 +230,6 @@ const RecommendTab: React.FC = () => {
                     </CardContent>
                 </Card>
             )}
-
-            {statsError && <div className="text-red-500 text-sm">{statsError}</div>}
         </div>
     );
 };
