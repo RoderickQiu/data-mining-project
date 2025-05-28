@@ -41,10 +41,10 @@ const MainTab: React.FC = () => {
             const numRecommendNum = parseInt(numRecommend.trim());
 
             if (isNaN(userIdNum)) {
-                throw new Error('请输入有效的用户ID');
+                throw new Error('Please enter a valid user ID');
             }
             if (isNaN(numRecommendNum) || numRecommendNum <= 0) {
-                throw new Error('请输入有效的推荐数量');
+                throw new Error('Please enter a valid number of recommendations');
             }
 
             const tags = benchmarkTags.trim()
@@ -74,7 +74,7 @@ const MainTab: React.FC = () => {
             });
             setInputCat(cats.join(','));
         } catch (err) {
-            setError(err instanceof Error ? err.message : '推荐失败');
+            setError(err instanceof Error ? err.message : 'Recommendation failed');
         } finally {
             setLoading(false);
         }
@@ -93,10 +93,10 @@ const MainTab: React.FC = () => {
             const cat = inputCat.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
 
             if (ids.length === 0 || rtime.length === 0 || cat.length === 0) {
-                throw new Error('请填写所有必需的输入');
+                throw new Error('Please fill in all required inputs');
             }
             if (ids.length !== rtime.length || ids.length !== cat.length) {
-                throw new Error('题目ID、响应时间、类别长度必须一致');
+                throw new Error('The lengths of question IDs, response times, and categories must match');
             }
 
             const request: PredictRequest = {
@@ -107,7 +107,7 @@ const MainTab: React.FC = () => {
             const response = await apiService.predict(request);
             setPredictions(response.probs.slice(0, ids.length));
         } catch (err) {
-            setPredictError(err instanceof Error ? err.message : '预测失败');
+            setPredictError(err instanceof Error ? err.message : 'Prediction failed');
         } finally {
             setPredictLoading(false);
         }
@@ -128,9 +128,9 @@ const MainTab: React.FC = () => {
         <div className="space-y-6">
             <Card>
                 <CardHeader>
-                    <CardTitle>题目推荐与预测</CardTitle>
+                    <CardTitle>Question Recommendation & Prediction</CardTitle>
                     <CardDescription>
-                        推荐题目后，自动填写题目ID和类别，手动填写响应时间，预测概率自动展示
+                        After recommending questions, question IDs and categories are auto-filled. Please manually fill in response times. Prediction probabilities will be shown automatically.
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -138,10 +138,10 @@ const MainTab: React.FC = () => {
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                         <div className="flex items-center space-x-2 mb-2">
                             <Info className="h-4 w-4 text-blue-600" />
-                            <span className="text-sm font-medium text-blue-800">提示</span>
+                            <span className="text-sm font-medium text-blue-800">Info</span>
                         </div>
                         <p className="text-sm text-blue-700 mb-2">
-                            请使用数据集中存在的用户ID。以下是一些示例用户ID：
+                            Please use a user ID that exists in the dataset. Here are some example user IDs:
                         </p>
                         <div className="flex flex-wrap gap-1">
                             {exampleUserIds.slice(0, 8).map((id) => (
@@ -157,33 +157,33 @@ const MainTab: React.FC = () => {
                     </div>
 
                     <div className="space-y-2">
-                        <Label htmlFor="user-id">用户ID</Label>
+                        <Label htmlFor="user-id">User ID</Label>
                         <Input
                             id="user-id"
-                            placeholder="例如: 115"
+                            placeholder="e.g. 115"
                             value={userId}
                             onChange={(e) => setUserId(e.target.value)}
                         />
                     </div>
 
                     <div className="space-y-2">
-                        <Label htmlFor="benchmark-tags">基准标签 (可选，用逗号分隔)</Label>
+                        <Label htmlFor="benchmark-tags">Benchmark Tags (optional, comma-separated)</Label>
                         <Input
                             id="benchmark-tags"
-                            placeholder="例如: 1,2,3"
+                            placeholder="e.g. 1,2,3"
                             value={benchmarkTags}
                             onChange={(e) => setBenchmarkTags(e.target.value)}
                         />
                         <p className="text-sm text-muted-foreground">
-                            基准标签：由使用的数据集提供，是一个或多个详细的标签代码，用于对问题进行聚类。标签的含义未被提供，但这些代码足以将类似的问题聚类在一起。
+                            Benchmark tags: Provided by the dataset, these are one or more detailed tag codes for clustering questions. The meaning of the tags is not provided, but these codes are sufficient to group similar questions together.
                         </p>
                     </div>
 
                     <div className="space-y-2">
-                        <Label htmlFor="num-recommend">推荐数量</Label>
+                        <Label htmlFor="num-recommend">Number of Recommendations</Label>
                         <Input
                             id="num-recommend"
-                            placeholder="例如: 10"
+                            placeholder="e.g. 10"
                             value={numRecommend}
                             onChange={(e) => setNumRecommend(e.target.value)}
                         />
@@ -201,42 +201,42 @@ const MainTab: React.FC = () => {
                         >
                             {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                             <Target className="mr-2 h-4 w-4" />
-                            推荐题目
+                            Recommend Questions
                         </Button>
                     </div>
                 </CardContent>
             </Card>
 
-            {/* 推荐题目结果 */}
+            {/* Recommendation Results */}
             {recommendations.length > 0 && (
                 <Card>
                     <CardHeader>
-                        <CardTitle>推荐题目结果</CardTitle>
+                        <CardTitle>Recommendation Results</CardTitle>
                         <CardDescription>
-                            根据用户历史数据和基准标签推荐的题目列表
+                            List of questions recommended based on user history and benchmark tags
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
-                        {/* 推荐题目信息 */}
+                        {/* Recommended Question Info */}
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
                             {recommendations.map((qid, index) => {
                                 const stat = questionStats.find(q => q.question_id === qid);
                                 return (
                                     <div key={index} className="text-left p-2 bg-muted rounded border">
-                                        <div className="text-sm text-muted-foreground mb-1">推荐 {index + 1}</div>
-                                        <div className="font-semibold mb-1">题目 {qid}</div>
+                                        <div className="text-sm text-muted-foreground mb-1">Recommendation {index + 1}</div>
+                                        <div className="font-semibold mb-1">Question {qid}</div>
                                         <div className="flex flex-wrap gap-1 mb-1">
                                             <span className="inline-block px-2 py-0.5 text-xs rounded bg-orange-100 text-orange-800">
-                                                难度: {stat?.difficulty !== undefined && stat?.difficulty !== null ? stat.difficulty.toFixed(3) : '-'}
+                                                Difficulty: {stat?.difficulty !== undefined && stat?.difficulty !== null ? stat.difficulty.toFixed(3) : '-'}
                                             </span>
                                             <span className="inline-block px-2 py-0.5 text-xs rounded bg-green-100 text-green-800">
-                                                区分度: {stat?.discrimination !== undefined && stat?.discrimination !== null ? stat.discrimination.toFixed(3) : '-'}
+                                                Discrimination: {stat?.discrimination !== undefined && stat?.discrimination !== null ? stat.discrimination.toFixed(3) : '-'}
                                             </span>
                                             <span className="inline-block px-2 py-0.5 text-xs rounded bg-yellow-100 text-yellow-800">
-                                                标签: {stat?.tags ?? '-'}
+                                                Tags: {stat?.tags ?? '-'}
                                             </span>
                                             <span className="inline-block px-2 py-0.5 text-xs rounded bg-pink-100 text-pink-800">
-                                                TOEIC 章节: {stat?.part ?? '-'}
+                                                TOEIC Part: {stat?.part ?? '-'}
                                             </span>
                                         </div>
                                     </div>
@@ -247,18 +247,18 @@ const MainTab: React.FC = () => {
                 </Card>
             )}
 
-            {/* 预测输入 */}
+            {/* Prediction Input */}
             {recommendations.length > 0 && (
                 <Card>
                     <CardHeader>
-                        <CardTitle>预测输入</CardTitle>
+                        <CardTitle>Prediction Input</CardTitle>
                         <CardDescription>
-                            题目ID和类别已自动填写，请输入响应时间（用逗号分隔，数量需与题目数一致）
+                            Question IDs and categories are auto-filled. Please enter response times (comma-separated, must match the number of questions)
                         </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
                         <div className="space-y-2">
-                            <Label htmlFor="input-ids">题目ID序列</Label>
+                            <Label htmlFor="input-ids">Question ID Sequence</Label>
                             <Input
                                 id="input-ids"
                                 value={recommendations.join(',')}
@@ -266,7 +266,7 @@ const MainTab: React.FC = () => {
                             />
                         </div>
                         <div className="space-y-2">
-                            <Label htmlFor="input-cat">题目类别序列</Label>
+                            <Label htmlFor="input-cat">Category Sequence</Label>
                             <Input
                                 id="input-cat"
                                 value={inputCat}
@@ -274,10 +274,10 @@ const MainTab: React.FC = () => {
                             />
                         </div>
                         <div className="space-y-2">
-                            <Label htmlFor="input-rtime">响应时间序列 (用逗号分隔)</Label>
+                            <Label htmlFor="input-rtime">Response Time Sequence (comma-separated)</Label>
                             <Input
                                 id="input-rtime"
-                                placeholder={`如: ${Array(recommendations.length).fill(1000).join(',')}`}
+                                placeholder={`e.g. ${Array(recommendations.length).fill(1000).join(',')}`}
                                 value={inputRtime}
                                 onChange={(e) => setInputRtime(e.target.value)}
                             />
@@ -287,19 +287,19 @@ const MainTab: React.FC = () => {
                         )}
                         <Button onClick={handlePredict} disabled={predictLoading} className="w-full">
                             {predictLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                            {predictLoading ? '预测中...' : '开始预测'}
+                            {predictLoading ? 'Predicting...' : 'Start Prediction'}
                         </Button>
                     </CardContent>
                 </Card>
             )}
 
-            {/* 预测结果 */}
+            {/* Prediction Results */}
             {predictions.length > 0 && (
                 <Card>
                     <CardHeader>
-                        <CardTitle>预测结果</CardTitle>
+                        <CardTitle>Prediction Results</CardTitle>
                         <CardDescription>
-                            模型对每个题目的预测概率
+                            Model predicted probability for each question
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -310,8 +310,8 @@ const MainTab: React.FC = () => {
                                     <XAxis dataKey="index" />
                                     <YAxis domain={[0, 1]} />
                                     <Tooltip
-                                        formatter={(value: number) => [value.toFixed(4), '预测概率']}
-                                        labelFormatter={(label) => `题目 ${label}`}
+                                        formatter={(value: number) => [value.toFixed(4), 'Predicted Probability']}
+                                        labelFormatter={(label) => `Question ${label}`}
                                     />
                                     <Line
                                         type="monotone"
@@ -326,7 +326,7 @@ const MainTab: React.FC = () => {
                         <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-2">
                             {predictions.map((prob, index) => (
                                 <div key={index} className="text-center p-2 bg-muted rounded">
-                                    <div className="text-sm text-muted-foreground">题目 {index + 1}</div>
+                                    <div className="text-sm text-muted-foreground">Question {index + 1}</div>
                                     <div className="font-semibold">{prob.toFixed(4)}</div>
                                 </div>
                             ))}
@@ -340,23 +340,23 @@ const MainTab: React.FC = () => {
                     <CardHeader>
                         <CardTitle className="flex items-center space-x-2">
                             <AlertCircle className="h-5 w-5 text-orange-500" />
-                            <span>未找到推荐结果</span>
+                            <span>No Recommendation Results Found</span>
                         </CardTitle>
                         <CardDescription>
-                            用户ID {userId} 没有找到推荐结果
+                            No recommendation results found for user ID {userId}
                         </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
                         <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
-                            <p className="text-sm text-orange-800 mb-2">可能的原因：</p>
+                            <p className="text-sm text-orange-800 mb-2">Possible reasons:</p>
                             <ul className="text-sm text-orange-700 space-y-1 ml-4">
-                                <li>• 该用户ID在数据集中不存在</li>
-                                <li>• 该用户没有足够的历史数据</li>
-                                <li>• 所有题目都已经被该用户尝试过</li>
+                                <li>• The user ID does not exist in the dataset</li>
+                                <li>• The user does not have enough historical data</li>
+                                <li>• The user has already attempted all questions</li>
                             </ul>
                         </div>
                         <div>
-                            <p className="text-sm text-muted-foreground mb-2">请尝试使用以下示例用户ID：</p>
+                            <p className="text-sm text-muted-foreground mb-2">Please try the following example user IDs:</p>
                             <div className="flex flex-wrap gap-2">
                                 {exampleUserIds.slice(0, 5).map((id) => (
                                     <Button
@@ -365,7 +365,7 @@ const MainTab: React.FC = () => {
                                         variant="outline"
                                         size="sm"
                                     >
-                                        用户 {id}
+                                        User {id}
                                     </Button>
                                 ))}
                             </div>

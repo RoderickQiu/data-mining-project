@@ -31,29 +31,29 @@ function App() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-4xl font-bold text-foreground mb-2">
-                智能学习推荐系统
+                Intelligent Learning Recommendation System
               </h1>
               <p className="text-muted-foreground text-lg">
-                基于深度学习的个性化题目推荐与学习预测平台
+                Personalized question recommendation and learning prediction platform based on deep learning
               </p>
             </div>
             <div className="flex items-center space-x-2">
               {apiStatus === 'checking' && (
                 <>
                   <Activity className="h-5 w-5 text-yellow-500 animate-pulse" />
-                  <span className="text-sm text-muted-foreground">检查API状态...</span>
+                  <span className="text-sm text-muted-foreground">Checking API status...</span>
                 </>
               )}
               {apiStatus === 'online' && (
                 <>
                   <CheckCircle className="h-5 w-5 text-green-500" />
-                  <span className="text-sm text-green-600">API在线</span>
+                  <span className="text-sm text-green-600">API Online</span>
                 </>
               )}
               {apiStatus === 'offline' && (
                 <>
                   <XCircle className="h-5 w-5 text-red-500" />
-                  <span className="text-sm text-red-600">API离线</span>
+                  <span className="text-sm text-red-600">API Offline</span>
                 </>
               )}
             </div>
@@ -66,10 +66,10 @@ function App() {
         {/* Footer */}
         <div className="mt-12 text-center text-sm text-muted-foreground">
           <p>
-            智能学习推荐系统 - 基于深度学习的个性化教育解决方案
+            Intelligent Learning Recommendation System - Personalized education solution based on deep learning
           </p>
           <p className="mt-1">
-            使用 React + TypeScript + shadcn/ui + Recharts 构建
+            Built with React + TypeScript + shadcn/ui + Recharts
           </p>
         </div>
       </div>
