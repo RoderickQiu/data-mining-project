@@ -4,135 +4,278 @@ import torch.nn.functional as F
 from config import Config
 
 
-class FFN(nn.Module):
-    def __init__(self, in_feat):
-        super(FFN, self).__init__()
-        self.linear1 = nn.Linear(in_feat, in_feat)
-        self.linear2 = nn.Linear(in_feat, in_feat)
+class FeedForwardNetwork(nn.Module):
+    """Feed-forward network with ReLU activation"""
 
-    def forward(self, x):
-        out = F.relu(self.linear1(x))
-        out = self.linear2(out)
-        return out
+    def __init__(self, feature_dim):
+        super(FeedForwardNetwork, self).__init__()
+        self.first_linear = nn.Linear(feature_dim, feature_dim)
+        self.second_linear = nn.Linear(feature_dim, feature_dim)
 
-
-class EncoderEmbedding(nn.Module):
-    def __init__(self, n_exercises, n_categories, n_dims, seq_len):
-        super(EncoderEmbedding, self).__init__()
-        self.n_dims = n_dims
-        self.seq_len = seq_len
-        self.exercise_embed = nn.Embedding(n_exercises, n_dims)
-        self.category_embed = nn.Embedding(n_categories, n_dims)
-        self.position_embed = nn.Embedding(seq_len, n_dims)
-
-    def forward(self, exercises, categories):
-        e = self.exercise_embed(exercises)
-        c = self.category_embed(categories)
-        seq = torch.arange(self.seq_len, device=Config.device).unsqueeze(0)
-        p = self.position_embed(seq)
-        return p + c + e
+    def forward(self, input_tensor):
+        activated = F.relu(self.first_linear(input_tensor))
+        output = self.second_linear(activated)
+        return output
 
 
-class DecoderEmbedding(nn.Module):
-    def __init__(self, n_responses, n_dims, seq_len):
-        super(DecoderEmbedding, self).__init__()
-        self.n_dims = n_dims
-        self.seq_len = seq_len
-        self.response_embed = nn.Embedding(n_responses, n_dims)
-        self.time_embed = nn.Linear(1, n_dims, bias=False)
-        self.position_embed = nn.Embedding(seq_len, n_dims)
+class ExerciseEncoder(nn.Module):
+    """Encoder for exercise embeddings with position and category information"""
 
-    def forward(self, responses):
-        e = self.response_embed(responses)
-        seq = torch.arange(self.seq_len, device=Config.device).unsqueeze(0)
-        p = self.position_embed(seq)
-        return p + e
+    def __init__(self, exercise_count, category_count, embedding_dim, sequence_length):
+        super(ExerciseEncoder, self).__init__()
+        self.embedding_dimension = embedding_dim
+        self.max_sequence_length = sequence_length
+
+        # Initialize embedding layers
+        self.exercise_embedding = nn.Embedding(exercise_count, embedding_dim)
+        self.category_embedding = nn.Embedding(category_count, embedding_dim)
+        self.positional_embedding = nn.Embedding(sequence_length, embedding_dim)
+
+    def forward(self, exercise_ids, category_ids):
+        # Get exercise embeddings
+        exercise_emb = self.exercise_embedding(exercise_ids)
+        # Get category embeddings
+        category_emb = self.category_embedding(category_ids)
+
+        # Create position sequence with proper batch size handling
+        batch_size = exercise_ids.size(0)
+        position_sequence = (
+            torch.arange(self.max_sequence_length, device=exercise_ids.device)
+            .unsqueeze(0)
+            .expand(batch_size, -1)
+        )
+        positional_emb = self.positional_embedding(position_sequence)
+
+        # Combine all embeddings
+        combined_embedding = positional_emb + category_emb + exercise_emb
+        return combined_embedding
 
 
-class StackedNMultiHeadAttention(nn.Module):
-    def __init__(self, n_stacks, n_dims, n_heads, seq_len, n_multihead=1, dropout=0.0):
-        super(StackedNMultiHeadAttention, self).__init__()
-        self.n_stacks = n_stacks
-        self.n_multihead = n_multihead
-        self.n_dims = n_dims
-        self.norm_layers = nn.LayerNorm(n_dims)
-        # n_stacks has n_multiheads each
-        self.multihead_layers = nn.ModuleList(n_stacks*[nn.ModuleList(n_multihead*[nn.MultiheadAttention(embed_dim=n_dims,
-                                                                                                         num_heads=n_heads,
-                                                                                                         dropout=dropout), ]), ])
-        self.ffn = nn.ModuleList(n_stacks*[FFN(n_dims)])
-        self.mask = torch.triu(torch.ones(seq_len, seq_len),
-                               diagonal=1).to(dtype=torch.bool)
+class ResponseDecoder(nn.Module):
+    """Decoder for response embeddings with positional encoding"""
+
+    def __init__(self, response_count, embedding_dim, sequence_length):
+        super(ResponseDecoder, self).__init__()
+        self.embedding_dimension = embedding_dim
+        self.max_sequence_length = sequence_length
+
+        # Initialize embedding layers
+        self.response_embedding = nn.Embedding(response_count, embedding_dim)
+        self.temporal_embedding = nn.Linear(1, embedding_dim, bias=False)
+        self.positional_embedding = nn.Embedding(sequence_length, embedding_dim)
+
+    def forward(self, response_sequence):
+        # Get response embeddings
+        response_emb = self.response_embedding(response_sequence)
+
+        # Create position sequence with proper batch size handling
+        batch_size = response_sequence.size(0)
+        position_sequence = (
+            torch.arange(self.max_sequence_length, device=response_sequence.device)
+            .unsqueeze(0)
+            .expand(batch_size, -1)
+        )
+        positional_emb = self.positional_embedding(position_sequence)
+
+        # Combine embeddings
+        combined_embedding = positional_emb + response_emb
+        return combined_embedding
+
+
+class MultiLayerAttentionStack(nn.Module):
+    """Multi-layer multi-head attention with stacking capability"""
+
+    def __init__(
+        self,
+        layer_count,
+        embedding_dim,
+        head_count,
+        seq_length,
+        multihead_count=1,
+        dropout_rate=0.0,
+    ):
+        super(MultiLayerAttentionStack, self).__init__()
+
+        self.layer_count = layer_count
+        self.multihead_count = multihead_count
+        self.embedding_dim = embedding_dim
+
+        # Layer normalization
+        self.layer_norm = nn.LayerNorm(embedding_dim)
+
+        # Create multi-head attention layers
+        self.attention_stack = self._create_attention_layers(
+            layer_count, multihead_count, embedding_dim, head_count, dropout_rate
+        )
+
+        # Feed-forward networks for each layer
+        self.ffn_stack = nn.ModuleList(
+            [FeedForwardNetwork(embedding_dim) for _ in range(layer_count)]
+        )
+
+        # Create attention mask
+        self.attention_mask = self._create_causal_mask(seq_length)
+
+    def _create_attention_layers(
+        self, layer_count, multihead_count, embedding_dim, head_count, dropout_rate
+    ):
+        """Helper method to create attention layer structure"""
+        return nn.ModuleList(
+            [
+                nn.ModuleList(
+                    [
+                        nn.MultiheadAttention(
+                            embed_dim=embedding_dim,
+                            num_heads=head_count,
+                            dropout=dropout_rate,
+                        )
+                        for _ in range(multihead_count)
+                    ]
+                )
+                for _ in range(layer_count)
+            ]
+        )
+
+    def _create_causal_mask(self, seq_length):
+        """Create upper triangular mask for causal attention"""
+        mask = torch.triu(torch.ones(seq_length, seq_length), diagonal=1)
+        return mask.to(dtype=torch.bool)
+
+    def _apply_attention_layer(self, query, key, value, layer_idx, head_idx):
+        """Apply single attention layer with normalization"""
+        normalized_q = self.layer_norm(query)
+        normalized_k = self.layer_norm(key)
+        normalized_v = self.layer_norm(value)
+
+        # Apply attention with proper device placement
+        attention_output, _ = self.attention_stack[layer_idx][head_idx](
+            query=normalized_q.permute(1, 0, 2),
+            key=normalized_k.permute(1, 0, 2),
+            value=normalized_v.permute(1, 0, 2),
+            attn_mask=self.attention_mask.to(query.device),
+        )
+
+        return attention_output.permute(1, 0, 2)
 
     def forward(self, input_q, input_k, input_v, encoder_output=None, break_layer=None):
-        for stack in range(self.n_stacks):
-            for multihead in range(self.n_multihead):
-                norm_q = self.norm_layers(input_q)
-                norm_k = self.norm_layers(input_k)
-                norm_v = self.norm_layers(input_v)
-                heads_output, _ = self.multihead_layers[stack][multihead](query=norm_q.permute(1, 0, 2),
-                                                                          key=norm_k.permute(
-                                                                              1, 0, 2),
-                                                                          value=norm_v.permute(
-                                                                              1, 0, 2),
-                                                                          attn_mask=self.mask.to(Config.device))
-                heads_output = heads_output.permute(1, 0, 2)
-                #assert encoder_output != None and break_layer is not None
-                if encoder_output != None and multihead == break_layer:
-                    assert break_layer <= multihead, " break layer should be less than multihead layers and postive integer"
-                    input_k = input_v = encoder_output
-                    input_q = input_q + heads_output
+        query, key, value = input_q, input_k, input_v
+
+        for layer_idx in range(self.layer_count):
+            for head_idx in range(self.multihead_count):
+                # Apply attention
+                attention_out = self._apply_attention_layer(
+                    query, key, value, layer_idx, head_idx
+                )
+
+                # Handle encoder-decoder attention
+                if encoder_output is not None and head_idx == break_layer:
+                    assert (
+                        break_layer <= head_idx
+                    ), "break layer should be less than multihead layers and positive integer"
+                    key = value = encoder_output
+                    query = query + attention_out
                 else:
-                    input_q = input_q + heads_output
-                    input_k = input_k + heads_output
-                    input_v = input_v + heads_output
-            last_norm = self.norm_layers(heads_output)
-            ffn_output = self.ffn[stack](last_norm)
-            ffn_output = ffn_output + heads_output
-        # after loops = input_q = input_k = input_v
-        return ffn_output
+                    query = query + attention_out
+                    key = key + attention_out
+                    value = value + attention_out
+
+            # Apply feed-forward network
+            normalized_attention = self.layer_norm(attention_out)
+            ffn_result = self.ffn_stack[layer_idx](normalized_attention)
+            attention_out = ffn_result + attention_out
+
+        return attention_out
 
 
 class PlusSAINTModule(nn.Module):
-    def __init__(self):
-        # n_encoder,n_detotal_responses,seq_len,max_time=300+1
-        super(PlusSAINTModule, self).__init__()
-        self.loss = nn.BCEWithLogitsLoss()
-        self.encoder_layer = StackedNMultiHeadAttention(n_stacks=Config.NUM_DECODER,
-                                                        n_dims=Config.EMBED_DIMS,
-                                                        n_heads=Config.DEC_HEADS,
-                                                        seq_len=Config.MAX_SEQ,
-                                                        n_multihead=1, dropout=0.0)
-        self.decoder_layer = StackedNMultiHeadAttention(n_stacks=Config.NUM_ENCODER,
-                                                        n_dims=Config.EMBED_DIMS,
-                                                        n_heads=Config.ENC_HEADS,
-                                                        seq_len=Config.MAX_SEQ,
-                                                        n_multihead=2, dropout=0.0)
-        self.encoder_embedding = EncoderEmbedding(n_exercises=Config.TOTAL_EXE,
-                                                  n_categories=Config.TOTAL_CAT,
-                                                  n_dims=Config.EMBED_DIMS, seq_len=Config.MAX_SEQ)
-        self.decoder_embedding = DecoderEmbedding(
-            n_responses=3, n_dims=Config.EMBED_DIMS, seq_len=Config.MAX_SEQ)
-        self.elapsed_time = nn.Linear(1, Config.EMBED_DIMS)
-        self.fc = nn.Linear(Config.EMBED_DIMS, 1)
+    """Enhanced SAINT model for knowledge tracing"""
 
-    def forward(self, x, y):
-        enc = self.encoder_embedding(
-            exercises=x["input_ids"], categories=x['input_cat'])
-        dec = self.decoder_embedding(responses=y)
-        elapsed_time = x["input_rtime"].unsqueeze(-1).float()
-        ela_time = self.elapsed_time(elapsed_time)
-        dec = dec + ela_time
-        # this encoder
-        encoder_output = self.encoder_layer(input_k=enc,
-                                            input_q=enc,
-                                            input_v=enc)
-        #this is decoder
-        decoder_output = self.decoder_layer(input_k=dec,
-                                            input_q=dec,
-                                            input_v=dec,
-                                            encoder_output=encoder_output,
-                                            break_layer=1)
-        # fully connected layer
-        out = self.fc(decoder_output)
-        return out.squeeze()
+    def __init__(self):
+        super(PlusSAINTModule, self).__init__()
+
+        # Initialize loss function
+        self.criterion = nn.BCEWithLogitsLoss()
+
+        # Create encoder stack
+        self.encoder_attention = MultiLayerAttentionStack(
+            layer_count=Config.NUM_DECODER,
+            embedding_dim=Config.EMBED_DIMS,
+            head_count=Config.DEC_HEADS,
+            seq_length=Config.MAX_SEQ,
+            multihead_count=1,
+            dropout_rate=0.0,
+        )
+
+        # Create decoder stack
+        self.decoder_attention = MultiLayerAttentionStack(
+            layer_count=Config.NUM_ENCODER,
+            embedding_dim=Config.EMBED_DIMS,
+            head_count=Config.ENC_HEADS,
+            seq_length=Config.MAX_SEQ,
+            multihead_count=2,
+            dropout_rate=0.0,
+        )
+
+        # Initialize embedding layers
+        self.exercise_encoder = ExerciseEncoder(
+            exercise_count=Config.TOTAL_EXE,
+            category_count=Config.TOTAL_CAT,
+            embedding_dim=Config.EMBED_DIMS,
+            sequence_length=Config.MAX_SEQ,
+        )
+
+        self.response_decoder = ResponseDecoder(
+            response_count=3,
+            embedding_dim=Config.EMBED_DIMS,
+            sequence_length=Config.MAX_SEQ,
+        )
+
+        # Time embedding and output layers
+        self.time_embedding_layer = nn.Linear(1, Config.EMBED_DIMS)
+        self.output_projection = nn.Linear(Config.EMBED_DIMS, 1)
+
+    def _process_encoder_features(self, input_data):
+        """Process encoder input features"""
+        return self.exercise_encoder(
+            exercise_ids=input_data["input_ids"], category_ids=input_data["input_cat"]
+        )
+
+    def _process_decoder_features(self, response_data, input_data):
+        """Process decoder input features with time embedding"""
+        decoder_emb = self.response_decoder(response_data)
+
+        # Process elapsed time
+        time_features = input_data["input_rtime"].unsqueeze(-1).float()
+        time_emb = self.time_embedding_layer(time_features)
+
+        # Combine decoder and time embeddings
+        return decoder_emb + time_emb
+
+    def forward(self, input_features, response_labels):
+        # Process encoder features
+        encoder_embeddings = self._process_encoder_features(input_features)
+
+        # Process decoder features
+        decoder_embeddings = self._process_decoder_features(
+            response_labels, input_features
+        )
+
+        # Apply encoder attention
+        encoder_representations = self.encoder_attention(
+            input_k=encoder_embeddings,
+            input_q=encoder_embeddings,
+            input_v=encoder_embeddings,
+        )
+
+        # Apply decoder attention with encoder output
+        decoder_representations = self.decoder_attention(
+            input_k=decoder_embeddings,
+            input_q=decoder_embeddings,
+            input_v=decoder_embeddings,
+            encoder_output=encoder_representations,
+            break_layer=1,
+        )
+
+        # Generate final predictions
+        predictions = self.output_projection(decoder_representations)
+        return predictions.squeeze()

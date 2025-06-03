@@ -6,7 +6,7 @@ This repository contains the codebase for a CS306 (Data Mining) final project, w
 
 ```
 data-mining-project/
-├── backend/                # Standalone recommendation logic (legacy, see main.py for API)
+├── recommend/              # Standalone recommendation logic (legacy, see main.py for API)
 ├── frontend/               # Modern React + TypeScript web interface
 ├── logs/                   # Training and experiment logs
 ├── saved_models/           # Trained model checkpoints (not tracked by git)

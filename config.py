@@ -1,8 +1,14 @@
 import torch
+import platform
 
 
 class Config:
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # Force CPU on macOS to avoid MPS issues, allow CUDA on other systems
+    if platform.system() == "Darwin":  # macOS
+        device = torch.device("cpu")
+    else:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     MAX_SEQ = 100
     EMBED_DIMS = 512
     ENC_HEADS = DEC_HEADS = 8

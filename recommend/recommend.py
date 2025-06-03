@@ -1,5 +1,5 @@
 import pandas as pd
-from backend.config import *
+from recommend.config import *
 
 # Load the datasets (please adjust the paths)
 df_train = pd.read_csv(TRAIN_DATA_PATH)
